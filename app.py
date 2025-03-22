@@ -14,8 +14,12 @@ app = Flask(__name__)
 #*******Bright Data WebScapping Browser******
 
 # Bright Data credentials
-AUTH = 'brd-customer-hl_24675aba-zone-scraping_browser1:4b6f1lnz6xuh'
+# AUTH = 'brd-customer-hl_24675aba-zone-scraping_browser1:4b6f1lnz6xuh'
+# SBR_WEBDRIVER = f'https://{AUTH}@brd.superproxy.io:9515'
+
+AUTH = 'brd-customer-hl_24675aba-zone-royal_mail_scrapper:l2p0sqiwt4ll'
 SBR_WEBDRIVER = f'https://{AUTH}@brd.superproxy.io:9515'
+
 
 def create_driver():
     print('Connecting to Scraping Browser...')
@@ -35,6 +39,69 @@ def safe_quit(driver):
 @app.route('/test', methods=['GET'])
 def test_endpoint():
     return jsonify({'message': 'API is working correctly'})
+
+@app.route('/test_scraping_browser', methods=['GET'])
+def test_scraping_browser():
+    driver = None
+    try:
+        # Test connection
+        print('Testing Scraping Browser connection...')
+        driver = create_driver()
+        
+        # Try to access a simple website
+        print('Attempting to access test URL...')
+        driver.get('https://example.com')
+        
+        # Wait briefly for page load
+        driver.implicitly_wait(10)
+        
+        # Get basic page information
+        page_title = driver.title
+        current_url = driver.current_url
+        
+        # Take a test screenshot
+        print('Taking test screenshot...')
+        driver.save_screenshot('test_connection.png')
+        
+        # Get page source length as additional check
+        page_source_length = len(driver.page_source)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Scraping Browser connection successful',
+            'details': {
+                'page_title': page_title,
+                'current_url': current_url,
+                'page_source_length': page_source_length,
+                'browser_session_id': driver.session_id,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+        })
+
+    except Exception as e:
+        error_message = str(e)
+        print(f'Connection test failed: {error_message}')
+        
+        # Attempt to get more detailed error information
+        error_details = {
+            'error_type': type(e).__name__,
+            'error_message': error_message,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # If it's a WebDriver exception, try to get additional details
+        if isinstance(e, WebDriverException):
+            error_details['session_id'] = getattr(driver, 'session_id', None)
+            error_details['command_executor'] = str(getattr(driver, 'command_executor', None))
+        
+        return jsonify({
+            'status': 'error',
+            'message': 'Scraping Browser connection failed',
+            'details': error_details
+        }), 500
+
+    finally:
+        safe_quit(driver)
 
 @app.route('/track', methods=['GET'])
 def track_package():
@@ -255,6 +322,8 @@ def track_package_only_number():
                 match = date_pattern.search(text)
                 if match:
                     driver.save_screenshot(f'track_only_number_found_attempt_{retry_count + 1}.png')
+                    print(f'Delivery date found in attempt {retry_count + 1}: {str(match.group())}')
+
                     return jsonify({
                         'delivery_date': match.group(),
                         'summary_elements': [elem.text for elem in summary_elements],
@@ -359,4 +428,4 @@ def track_package_new():
     }), 404
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5003)
+    app.run(host='0.0.0.0', port=5002)

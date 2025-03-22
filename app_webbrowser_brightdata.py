@@ -7,9 +7,30 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException
 import re
 import time
+import os
+import glob
 
 app = Flask(__name__)
 
+def cleanup_screenshots():
+    """
+    Deletes all .png files in the current directory
+    """
+    try:
+        # Get all .png files in the current directory
+        screenshots = glob.glob('*.png')
+        
+        # Delete each screenshot
+        for screenshot in screenshots:
+            try:
+                os.remove(screenshot)
+                print(f"Deleted: {screenshot}")
+            except Exception as e:
+                print(f"Error deleting {screenshot}: {str(e)}")
+                
+        print(f"Cleaned up {len(screenshots)} screenshots")
+    except Exception as e:
+        print(f"Error during screenshot cleanup: {str(e)}")
 
 #*******Bright Data WebScapping Browser******
 
@@ -31,6 +52,57 @@ def safe_quit(driver):
             driver.quit()
     except WebDriverException:
         pass  # Ignore session not found errors during quit
+
+def accept_cookie_dialog(driver):
+    """
+    Handles the Royal Mail cookie preference dialog by accepting all cookies.
+    Returns True if successful, False if no dialog found or error occurs.
+    """
+    try:
+        # Wait for the cookie dialog to appear (up to 10 seconds)
+        wait = WebDriverWait(driver, 10)
+        
+        # Try to find and click the "Accept all" button using specific Royal Mail selectors
+        cookie_button_selectors = [
+            "button#consent_prompt_submit",  # Primary Royal Mail accept button
+            "button.primaryConsentCta:nth-child(1)",  # Alternative selector
+            "button.button.left.primaryConsentCta",  # Another alternative
+            ".consent_buttons button:first-child",  # Generic structure-based selector
+            "button[tabindex='2']"  # Tabindex-based selector
+        ]
+        
+        for selector in cookie_button_selectors:
+            try:
+                # Wait for element to be both present and clickable
+                cookie_button = wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                )
+                # Add a small delay to ensure the dialog is fully loaded
+                time.sleep(1)
+                cookie_button.click()
+                print("Successfully accepted Royal Mail cookies")
+                return True
+            except Exception as e:
+                continue
+        
+        # If we get here, try finding the dialog container and then the button
+        try:
+            dialog = wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, "privacy_prompt_container"))
+            )
+            accept_button = dialog.find_element(By.ID, "consent_prompt_submit")
+            accept_button.click()
+            print("Successfully accepted cookies through dialog container")
+            return True
+        except Exception as e:
+            print("Could not find cookie dialog through container")
+            
+        print("Cookie dialog not found with any known selectors")
+        return False
+        
+    except Exception as e:
+        print(f"Error handling cookie dialog: {str(e)}")
+        return False
 
 @app.route('/test', methods=['GET'])
 def test_endpoint():
@@ -218,13 +290,24 @@ def track_package():
     finally:
         safe_quit(driver)
 
+def get_retry_count(request):
+    """Helper function to get retry count from request parameters"""
+    try:
+        retries = request.args.get('retries', default=3, type=int)
+        return max(1, min(retries, 5))  # Limit retries between 1 and 5
+    except:
+        return 3  # Default retry count
+
 @app.route('/track_only_number', methods=['GET'])
 def track_package_only_number():
+    # Clean up old screenshots first
+    cleanup_screenshots()
+    
     tracking_number = request.args.get('tracking_number')
     if not tracking_number:
         return jsonify({'error': 'Tracking number is required'}), 400
 
-    max_retries = 3
+    max_retries = get_retry_count(request)
     for retry_count in range(max_retries):
         driver = None
         try:
@@ -236,6 +319,17 @@ def track_package_only_number():
             print('Connected! Navigating...')
             url = f'https://www.royalmail.com/track-your-item#/tracking-results/{tracking_number}'
             driver.get(url)
+
+            # Handle cookie preferences first
+            accept_cookie_dialog(driver)
+
+            # Handle CAPTCHA
+            print('Waiting for CAPTCHA to solve...')
+            solve_res = driver.execute('executeCdpCommand', {
+                'cmd': 'Captcha.waitForSolve',
+                'params': {'detectTimeout': 10000},
+            })
+            print('CAPTCHA solve status:', solve_res['value']['status'])
 
             # Wait for page load
             driver.implicitly_wait(100)
@@ -276,11 +370,14 @@ def track_package_only_number():
 
 @app.route('/track_new', methods=['GET'])
 def track_package_new():
+    # Clean up old screenshots first
+    cleanup_screenshots()
+    
     tracking_number = request.args.get('tracking_number')
     if not tracking_number:
         return jsonify({'error': 'Tracking number is required'}), 400
 
-    max_retries = 3
+    max_retries = get_retry_count(request)
     for retry_count in range(max_retries):
         driver = None
         try:
@@ -292,6 +389,17 @@ def track_package_new():
             print('Connected! Navigating...')
             url = f'https://www.royalmail.com/track-your-item#/tracking-results/{tracking_number}'
             driver.get(url)
+
+            # Handle cookie preferences first
+            accept_cookie_dialog(driver)
+
+            # Handle CAPTCHA
+            print('Waiting for CAPTCHA to solve...')
+            solve_res = driver.execute('executeCdpCommand', {
+                'cmd': 'Captcha.waitForSolve',
+                'params': {'detectTimeout': 10000},
+            })
+            print('CAPTCHA solve status:', solve_res['value']['status'])
 
             # Wait for page load
             driver.implicitly_wait(100)
@@ -358,5 +466,104 @@ def track_package_new():
         'tracking_number': tracking_number
     }), 404
 
+@app.route('/track_all', methods=['GET'])
+def track_package_all():
+    # Clean up old screenshots first
+    cleanup_screenshots()
+    
+    tracking_number = request.args.get('tracking_number')
+    if not tracking_number:
+        return jsonify({'error': 'Tracking number is required'}), 400
+
+    max_retries = get_retry_count(request)
+    for retry_count in range(max_retries):
+        driver = None
+        try:
+            if retry_count > 0:
+                print(f'Retry attempt {retry_count} of {max_retries - 1}')
+                time.sleep(5)  # Wait 5 seconds between retries
+
+            driver = create_driver()
+            print('Connected! Navigating...')
+            url = f'https://www.royalmail.com/track-your-item#/tracking-results/{tracking_number}'
+            driver.get(url)
+
+            # Handle cookie preferences first
+            accept_cookie_dialog(driver)
+
+            # Handle CAPTCHA
+            print('Waiting for CAPTCHA to solve...')
+            solve_res = driver.execute('executeCdpCommand', {
+                'cmd': 'Captcha.waitForSolve',
+                'params': {'detectTimeout': 10000},
+            })
+            print('CAPTCHA solve status:', solve_res['value']['status'])
+
+            # Wait for page load
+            # driver.implicitly_wait(100)
+
+            # Take screenshot before searching for elements
+            # print('Taking page screenshot')
+            # try:
+            #     driver.save_screenshot(f'track_all_attempt_{retry_count + 1}.png')
+            # except Exception as screenshot_error:
+            #     print(f'Screenshot error: {screenshot_error}')
+
+            # Wait for the section-col-inner element to be present
+            wait = WebDriverWait(driver, 10)
+            section_element = wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'section-col-inner'))
+            )
+
+            # Get both the HTML and text content
+            html_content = section_element.get_attribute('innerHTML')
+            text_content = section_element.text
+
+            # # Extract all text from all elements
+            # all_elements = driver.find_elements(By.XPATH, "//*[not(self::script)][not(self::style)][string-length(normalize-space(text())) > 0]")
+            # all_text = []
+            # for element in all_elements:
+            #     try:
+            #         text = element.text.strip()
+            #         if text:
+            #             all_text.append(text)
+            #     except:
+            #         continue
+
+            # Take success screenshot
+            print(f'Taking success screenshot for attempt {retry_count + 1}')
+            # driver.save_screenshot(f'track_all_success_attempt_{retry_count + 1}.png')
+            
+            return jsonify({
+                'html_content': html_content,
+                'text_content': text_content,
+                # 'all_text': all_text,
+                'attempt': retry_count + 1,
+                'tracking_number': tracking_number
+            })
+
+        except Exception as e:
+            print(f'Error occurred in attempt {retry_count + 1}: {str(e)}')
+            # try:
+            #     driver.save_screenshot(f'track_all_error_attempt_{retry_count + 1}.png')
+            # except:
+            #     pass
+                
+            if retry_count == max_retries - 1:  # Only return error on last attempt
+                return jsonify({
+                    'error': str(e),
+                    'tracking_number': tracking_number,
+                    'details': 'Failed to extract content from section-col-inner'
+                }), 500
+
+        finally:
+            safe_quit(driver)
+
+    # If we get here, we've exhausted all retries
+    return jsonify({
+        'message': f'Content not found after {max_retries} attempts',
+        'tracking_number': tracking_number
+    }), 404
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5003)
+    app.run(host='0.0.0.0', port=5002)
