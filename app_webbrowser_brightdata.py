@@ -515,29 +515,37 @@ def track_package_all():
                 EC.presence_of_element_located((By.CLASS_NAME, 'section-col-inner'))
             )
 
-            # Get both the HTML and text content
-            html_content = section_element.get_attribute('innerHTML')
-            text_content = section_element.text
+            # Find and click the accordion button to reveal tracking history
+            try:
+                accordion_button = wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '.accordion-header'))
+                )
+                accordion_button.click()
+                
+                
+                # Wait for the tracking history content to become visible
+                history_element = wait.until(
+                    EC.visibility_of_element_located((By.CLASS_NAME, 'history-sections'))
+                )
+                
+                 # Get both the HTML and text content after accordion is opened
+                html_content = section_element.get_attribute('innerHTML')
+                text_content = section_element.text
 
-            # # Extract all text from all elements
-            # all_elements = driver.find_elements(By.XPATH, "//*[not(self::script)][not(self::style)][string-length(normalize-space(text())) > 0]")
-            # all_text = []
-            # for element in all_elements:
-            #     try:
-            #         text = element.text.strip()
-            #         if text:
-            #             all_text.append(text)
-            #     except:
-            #         continue
+                # Small delay to ensure animation completes
+                time.sleep(1)
+                
+                # Get the text content of the tracking history
+                tracking_history_text = history_element.text
 
-            # Take success screenshot
-            print(f'Taking success screenshot for attempt {retry_count + 1}')
-            # driver.save_screenshot(f'track_all_success_attempt_{retry_count + 1}.png')
-            
+            except Exception as accordion_error:
+                print(f'Error opening accordion: {accordion_error}')
+                tracking_history_text = ""
+
             return jsonify({
-                'html_content': html_content,
+                # 'html_content': html_content,
                 'text_content': text_content,
-                # 'all_text': all_text,
+                # 'tracking_history': tracking_history_text,
                 'attempt': retry_count + 1,
                 'tracking_number': tracking_number
             })
